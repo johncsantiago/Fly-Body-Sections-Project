@@ -1,0 +1,1249 @@
+---
+title: "TKT RNAseq Experiment: Differential Expression Analysis"
+author: "John Santiago"
+date: "2022-06-20"
+output: 
+  bookdown::html_document2:
+    number_sections: false
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+## [Return to Home Page](https://johncsantiago.github.io/TKT_RNAseq_preliminary.html)
+
+<br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Table of Contents</span> 
+
+### All samples processed together
+- #### Figure \@ref(fig:fig1): MDS plot, all samples
+
+- #### Figure \@ref(fig:fig2): Barplot of Total DEGs
+
+### Testing potential outlier samples
+
+- #### Figure \@ref(fig:fig3): PCA of GR.F CxDf DEGs
+
+- #### Figure \@ref(fig:fig4): PCA of GR.F CxOE DEGs
+
+- #### Figure \@ref(fig:fig5): PCA of GR.FC x WT.FC DEGs
+
+- #### Figure \@ref(fig:fig6): PCA of WT.F CxDf DEGs
+
+- #### Figure \@ref(fig:fig7): PCA of WT.F CxOE DEGs
+
+- #### Figure \@ref(fig:fig8): PCA of TktDfGR.F x TktDfWT.F DEGs
+
+### Male and female samples processed together with TEs and outlier libraries removed
+- #### Figure \@ref(fig:fig9): MDS plot, all samples
+
+- #### Figure \@ref(fig:fig10): Barplot of Total DEGs
+
+### Male and Female samples processed separately with TEs and outlier libraries removed
+- #### Figure \@ref(fig:fig11): MDS plot of female samples only
+
+- #### Figure \@ref(fig:fig12): MDS plot of male samples only
+
+- #### Figure \@ref(fig:fig13): Barplot of Total DEGs
+
+- #### Figure \@ref(fig:fig14): Barplot of Total DEGs for each comparison under the different trimming conditions
+
+- #### Figure \@ref(fig:fig15): Venn Diagram of total DEGs between male and female samples
+
+Venn Diagram of total DEGs between male and female samples
+<br /><br /><br />
+\newpage
+
+### Conclusion: GR.F3, WT.F3 and TktDfWT.F3 are outlier libraries that should be removed before further analysis but there is no need to process male and female samples separately
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r echo=F, include=FALSE}
+
+library(edgeR)
+library(plotly)
+library(heatmaply)
+library(VennDiagram)
+
+##Clean Trait Data and calculate CPMs
+
+git.dir = "https://raw.githubusercontent.com/johncsantiago/Fly-Body-Sections-Project/master/Data/"
+countdata = read.csv(paste0(git.dir,"countdata.csv"),row.names = 1)
+groups  = read.csv(paste0(git.dir,"groups.csv"),row.names = 1)
+
+##groups = groups[groups$Sex == "Male",]
+##groups = groups[!(groups$Tissue == "Thorax" & groups$Sex == "Male" & groups$Species == "SO"),]
+ 
+convert=read.csv("https://raw.githubusercontent.com/DavidRandLab/Santiago-et-al-2021-BMC-Genomics/main/Data%20Files/FBgnConversionTable.csv",row.names=1)
+
+##normalize data
+countdata=countdata[, row.names(groups)]
+x <- countdata
+gr <- factor(groups$Group, levels=c(unique(groups$Group)))
+y <- DGEList(counts=x,group=gr)
+keep <- filterByExpr(y)
+y <- y[keep,,keep.lib.sizes=FALSE]
+z <- calcNormFactors(y, method = "TMM")
+##normalized cpm
+cpmdata=cpm(z)
+
+design<-model.matrix(~0 + gr)
+colnames(design) = unique(gr)
+z = estimateDisp(z, design, robust = T)
+
+fit <- glmQLFit(z, design)
+plotQLDisp(fit)
+
+##Will calculate fold-change with the first over the second
+
+##GR.F TKT control vs TKT altered
+compare = makeContrasts(TktDfGR.F-GR.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.F.CxDf=DEout
+sGR.F.CxDf=DEout[DEout$FDR<.05,]
+
+TKT.EdgeR = data.frame(GRF.CxDf = GR.F.CxDf[row.names(cpmdata),'FDR'],
+                       GRF.CxOE = GR.F.CxOE[row.names(cpmdata),'FDR'],
+                       
+                       WTF.CxDf = WT.F.CxDf[row.names(cpmdata),'FDR'],
+                       WTF.CxOE = WT.F.CxOE[row.names(cpmdata),'FDR'],
+                       
+                       GRxWT.FC = GRxWT.F[row.names(cpmdata),'FDR'],
+                       GRxWT.FDf = GRxWT.FDf[row.names(cpmdata),'FDR'],
+                       GRxWT.FOE = GRxWT.FOE[row.names(cpmdata),'FDR'],
+                       
+                       GRM.CxDf = GR.M.CxDf[row.names(cpmdata),'FDR'],
+                       GRM.CxOE = GR.M.CxOE[row.names(cpmdata),'FDR'],
+                       
+                       WTM.CxDf = WT.M.CxDf[row.names(cpmdata),'FDR'],
+                       WTM.CxOE = WT.M.CxOE[row.names(cpmdata),'FDR'],
+                       
+                       GRxWT.MC = GRxWT.M[row.names(cpmdata),'FDR'],
+                       GRxWT.MDf = GRxWT.MDf[row.names(cpmdata),'FDR'],
+                       GRxWT.MOE = GRxWT.MOE[row.names(cpmdata),'FDR'])
+
+row.names(TKT.EdgeR) = row.names(cpmdata)
+##write.csv(TKT.EdgeR, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT.EdgeR.Table.csv")
+
+Female = c(nrow(sGR.F.CxDf), nrow(sGR.F.CxOE),
+           nrow(sWT.F.CxDf), nrow(sWT.F.CxOE),
+           nrow(sGRxWT.F), nrow(sGRxWT.FDf), nrow(sGRxWT.FOE))
+
+Male = c(nrow(sGR.M.CxDf), nrow(sGR.M.CxOE),
+         nrow(sWT.M.CxDf), nrow(sWT.M.CxOE),
+         nrow(sGRxWT.M), nrow(sGRxWT.MDf), nrow(sGRxWT.MOE))
+  
+
+
+
+temp=convert[,"Symbol"]
+temp2=setdiff(row.names(countdata),convert[,2])
+names(temp)=convert[,2]
+names(temp2)=temp2
+convert=c(temp,temp2)
+
+Comparisons = list(row.names(sGR.F.CxDf), row.names(sGR.F.CxOE),
+                row.names(sWT.F.CxDf), row.names(sWT.F.CxOE),
+                row.names(sGRxWT.F), row.names(sGRxWT.FDf), row.names(sGRxWT.FOE),
+                row.names(sGR.M.CxDf), row.names(sGR.M.CxOE),
+                row.names(sWT.M.CxDf), row.names(sWT.M.CxOE),
+                row.names(sGRxWT.M), row.names(sGRxWT.MDf), row.names(sGRxWT.MOE))
+
+GroupsToDEGs = matrix("", nrow = 28, ncol = 3)
+
+GroupsToDEGs[,1] = c("GR.F", "TktDfGR.F",
+                     "GR.F", "TktOEGR.F",
+                     "WT.F", "TktDfWT.F",
+                     "WT.F", "TktOEWT.F",
+                     "GR.F", "WT.F",
+                     "TktDfGR.F", "TktDfWT.F",
+                     "TktOEGR.F", "TktOEWT.F",
+                     "GR.M", "TktDfGR.M",
+                     "GR.M", "TktOEGR.M",
+                     "WT.M", "TktDfWT.M",
+                     "WT.M", "TktOEWT.M",
+                     "GR.M", "WT.M",
+                     "TktDfGR.M", "TktDfWT.M",
+                     "TktOEGR.M", "TktOEWT.M")
+
+GroupsToDEGs[,2] = c("TktDfGR.F", "GR.F",
+                     "TktOEGR.F", "GR.F", 
+                     "TktDfWT.F", "WT.F", 
+                     "TktOEWT.F", "WT.F", 
+                     "WT.F", "GR.F", 
+                     "TktDfWT.F", "TktDfGR.F", 
+                     "TktOEWT.F", "TktOEGR.F", 
+                     "TktDfGR.M", "GR.M", 
+                     "TktOEGR.M", "GR.M", 
+                     "TktDfWT.M", "WT.M", 
+                     "TktOEWT.M", "WT.M", 
+                     "WT.M", "GR.M", 
+                     "TktDfWT.M", "TktDfGR.M", 
+                     "TktOEWT.M", "TktOEGR.M")
+
+GroupsToDEGs[,3] = c(1,1,2,2,3,3,4,4,5,5,6,6,7,7,
+                     8,8,9,9,10,10,11,11,12,12,13,13,14,14)
+
+```
+
+## <span style="text-decoration:underline">Do the samples group by condition?</span> 
+```{r fig1, echo = F, warning=F, fig.height=10, fig.width=10, fig.cap= 'MDS plot using all samples. Of these, samples GR.F3, WT.F3 and TktDfWT.F3 stand out as potential outliers.'}
+MDSdata = plotMDS(z, top = 1000, col=as.numeric(factor(gr)))
+
+MDSplot = data.frame(x = MDSdata$x,
+                     y = MDSdata$y,
+                     sample = row.names(groups))
+
+MDSplot = cbind(MDSplot, groups[MDSplot$sample,])
+MDSplot$Tissue = factor(MDSplot$Tissue, levels = c("Head", "Thorax", "Abdomen"))
+MDSplot$GenoSex = paste0(MDSplot$Species,MDSplot$Sex)
+MDSplot = MDSplot[order(MDSplot$Tissue),]
+MDSplot = MDSplot[order(MDSplot$Treatment),]
+MDSplot = MDSplot[order(MDSplot$Sex),]
+MDSplot = MDSplot[order(MDSplot$GenoSex),]
+MDSplot$Group = factor(MDSplot$Group, levels = unique(MDSplot$Group))
+##MDSplot$GenoSex = factor(MDSplot$GenoSex, levels = unique(MDSplot$GenoSex))
+MDSplot$color = MDSplot$Tissue
+
+
+  fig  = plot_ly(data = MDSplot, 
+                 x = ~x, 
+                 y = ~y,
+                 name = ~Group,
+                 type = 'scatter',
+                 mode = 'markers',
+                 showlegend = F,
+                 color = ~Tissue,
+                 symbol = ~Group,
+                 ##legendrank = ~ as.numeric(Group),
+                 symbols = rep(c('circle', 'square', 'diamond'),4),
+                 colors = c("brown","steelblue","gold2"),
+                 marker = list(size = 15,
+                               line = list(color = "black", width = 1.5)),
+                 hoverinfo = "text",
+                 hovertext = paste("Sample:", row.names(MDSplot))) %>%
+    layout(xaxis = list(title = paste0("Leading logFC dim 1 ", "(", round((MDSdata$var.explained[1]*100),1), "%)")),
+           yaxis = list(title = paste0("Leading logFC dim 2 ", "(", round((MDSdata$var.explained[2]*100),1), "%)")))
+  
+fig
+
+```
+
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r fig2, echo = F, fig.cap='Barplot of Total DEGs observed with edgeR when using all samples.'}
+
+Female = c(nrow(sGR.F.CxDf), nrow(sGR.F.CxOE),
+           nrow(sWT.F.CxDf), nrow(sWT.F.CxOE),
+           nrow(sGRxWT.F), nrow(sGRxWT.FDf), nrow(sGRxWT.FOE))
+
+Male = c(nrow(sGR.M.CxDf), nrow(sGR.M.CxOE),
+         nrow(sWT.M.CxDf), nrow(sWT.M.CxOE),
+         nrow(sGRxWT.M), nrow(sGRxWT.MDf), nrow(sGRxWT.MOE))
+  
+Comparison = c("GR.C x GR.Df", "GR.C x GR.OE",
+               "WT.C x WT.Df", "WT.C x WT.OE",
+               "GR.C x WT.C", "GR.Df x WT.Df", "GR.OE x WT.OE")
+
+data = data.frame(Female, Male, Comparison)
+
+data$Comparison = factor(data$Comparison, levels = data$Comparison)
+
+fig <- plot_ly(data, 
+               x = ~Comparison, y = ~Female, 
+               type = 'bar',
+               name = "Female",
+               marker = list(color =c("firebrick"),
+                             line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male, name = 'Males',
+                         marker = list(color = c("royalblue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% layout(yaxis = list(title ="Total DEGs"),
+                      xaxis = list(title = NA),
+                      title = "Total DEGs")
+
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r, echo =F, include=F}
+##Supervised PCAs
+
+##Samples to plot
+##genotype = "GR"                       ##options = "GR", "WT", or "all"
+##sex      = "F"                         ##options = "M", "F", or "all"
+##tkt      = c("Control", "DF")                    ##options = "Control", "DF", "OE", or "all"
+
+                                       ##must choose genotype of first and second condition
+##DEGs.genotypes = c("GR", "GR")         ##length = 2; options = "GR", "WT", or "all"
+
+                                       ##a single sex, won't compare between sexs
+##DEGs.sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                       ##choose tkt expression of first and second condition
+##DEGs.tkt       = c("Control", "DF")    ##length = 1; "Control", "DF", "OE"
+
+                                  ##must choose genotype of first and second condition
+genotypes = c("GR", "GR")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "DF")    ##length = 1; "Control", "DF", "OE"
+
+
+##SupervisedPCA = function(genotype, sex, tkt, DEGs.genotypes, DEGs.sex, DEGs.tkt){
+SupervisedPCA = function(genotypes, sex, tkt){
+Group1=unique(groups[(groups$Genotype == genotypes[1] & ##DEGs.genotypes[1] &
+                      groups$Sex == sex & ##DEGs.sex &
+                      groups$TKT == tkt[1]), ##DEGs.tkt[1]), 
+                      "Group"])
+
+Group2=unique(groups[(groups$Genotype == genotypes[2] & ##DEGs.genotypes[2] &
+                      groups$Sex == sex & ##DEGs.sex &
+                      groups$TKT == tkt[2]), ##DEGs.tkt[2]), 
+                      "Group"])
+
+DEGs = GroupsToDEGs[(GroupsToDEGs[,1] == Group1 &
+                     GroupsToDEGs[,2] == Group2),
+                    3]
+
+DEGs = Comparisons[[as.numeric(DEGs)]]
+
+    use.groups =  groups[groups$Group == Group1 |
+                         groups$Group == Group2,]
+    
+    ##if(genotype == "GR" | genotype == "WT"){
+      ##use.groups = use.groups[use.groups$Genotype == genotype,]
+    ##}
+    
+
+    ##if(sex == "M" | sex == "F"){
+      ##use.groups = use.groups[use.groups$Sex == sex,]
+    ##}
+    
+
+    ##if(length(tkt) == 1 & length(intersect(tkt, "all")) == 0){
+      ##use.groups = use.groups[use.groups$TKT == tkt,]
+    ##}
+    
+    ##if(length(tkt) == 2){
+      ##use.groups = use.groups[use.groups$TKT == tkt[1]|
+                                ##use.groups$TKT == tkt[2],]
+    ##}
+
+    use.data   = cpmdata[DEGs,row.names(use.groups)]
+    pca <- prcomp(t(use.data), scale.=TRUE) 
+    gr <- as.data.frame(use.groups)
+    PC1=scale(pca$x[,1])
+    PC2=scale(pca$x[,2])
+    eigs <- pca$sdev^2
+    ve=signif(((eigs / sum(eigs))*100)[1:3],4)
+
+    pca.data=data.frame(Sample=row.names(gr),
+                        PC1=scale(pca$x[,1]),
+                        PC2=scale(pca$x[,2]),
+                        sdev=pca$sdev,
+                        Genotype=gr$Genotype, 
+                        Sex=gr$Sex, 
+                        TKT=gr$TKT,
+                        Percent1=ve[1],
+                        Percent2=ve[2],
+                        Group=gr$Group)
+
+  fig  = plot_ly(data = pca.data, 
+                 x = ~PC1, 
+                 y = ~PC2,
+                 name = ~Group,
+                 type = 'scatter',
+                 mode = 'markers',
+                 showlegend = T,
+                 color = ~Group,
+                 symbol = ~TKT,
+                 ##symbols = as.character(seq_along(unique(point.data$Set))),
+                 colors = c("firebrick","gold","deepskyblue"),
+                 marker = list(size = 25,
+                               line = list(color = "black", width = 1.5)),
+                 hoverinfo = "text",
+                 hovertext = paste("Sample:", pca.data$Sample)) %>%
+    layout(xaxis = list(title = paste0("PC1", "(", ve[1], "%)")),
+           yaxis = list(title = paste0("PC2", "(", ve[2], "%)")))
+  return(fig)
+  }
+
+
+```
+
+## <span style="text-decoration:underline">Is the expression profile for GR.F3 an outlier in genes found DE GR.FC and GR.FDf?</span> 
+```{r fig3, echo = F, warning=F, fig.height=8, fig.width=8, echo = F, fig.cap='PCA of GR.F CxDf DEGs. Testing if GR.F3 is an outlier library.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("GR", "GR")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "DF")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Is the expression profile for GR.F3 an outlier in genes found DE GR.FC and GR.FOE?</span> 
+```{r fig4, echo = F, warning=F, fig.height=8, fig.width=8, fig.cap='PCA of GR.F CxOE DEGs. Testing if GR.F3 is an outlier library.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("GR", "GR")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "OE")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Are the expression profiles for GR.F3 and WT.F3 outliers in genes found DE GR.FC and WT.FC?</span> 
+```{r fig5, echo = F, warning=F, fig.height=8, fig.width=8, fig.cap='PCA of GR.FC x WT.FC DEGs. Testing if GR.F3 and WT.F3 are outlier libraries.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("GR", "WT")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "Control")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Are the expression profiles for WT.F3 and TktDfWT.F3 outliers in genes found WT.FC and TktDfWT.F?</span> 
+```{r fig6, echo = F, warning=F, fig.height=8, fig.width=8, fig.cap='PCA of WT.F CxDf DEGs. Testing if WT.F3 and TktDfWT.F3 are outlier libraries.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("WT", "WT")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "DF")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Is the expression profile for WT.F3 an outlier in genes found DE WT.FC and WT.FOE?</span> 
+```{r fig7, echo = F, warning=F, fig.height=8, fig.width=8, fig.cap='PCA of WT.F CxOE DEGs. Testing if WT.F3 is an outlier library.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("WT", "WT")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("Control", "OE")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">Is the expression profile for TktDfWT.F3 an outlier in genes found DE TktDfGR.F and TktDfWT.F?</span> 
+```{r fig8, echo = F, warning=F, fig.height=8, fig.width=8, fig.cap='PCA of TktDfGR.F x TktDfWT.F DEGs. Testing if TktDfWT.F3 is an outlier library.'}
+##Supervised PCAs
+##Samples to plot
+                                  ##must choose genotype of first and second condition
+genotypes = c("GR", "WT")         ##length = 2; options = "GR", "WT", or "all"
+
+                                  ##a single sex, won't compare between sexs
+sex       = "F"                   ##length = 1; options = "M", "F"
+
+                                  ##choose tkt expression of first and second condition
+tkt       = c("DF", "DF")    ##length = 1; "Control", "DF", "OE"
+
+SupervisedPCA(genotypes, sex, tkt)
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r, echo = F, include = F}
+###EdgeR with TEs and outlier libraries removed
+
+groups2 = groups[setdiff(row.names(groups), c("GR.F3", "WT.F3", "TktDfWT.F3")),]
+
+countdata2 = countdata[, row.names(groups2)]
+
+countdata2 = countdata2[-(grep("ti",row.names(countdata2))),]
+countdata2 = countdata2[-(grep("trans",row.names(countdata2))),]
+
+
+x <- countdata2
+gr <- factor(groups2$Group)
+y <- DGEList(counts=x,group=gr)
+keep <- filterByExpr(y)
+y <- y[keep,,keep.lib.sizes=FALSE]
+z <- calcNormFactors(y, method = "TMM")
+##normalized cpm
+cpmdata2=cpm(z)
+
+design<-model.matrix(~0 + gr)
+colnames(design) = unique(gr)
+z = estimateDisp(z, design, robust = T)
+
+fit <- glmQLFit(z, design)
+plotQLDisp(fit)
+
+##Will calculate fold-change with the first over the second
+
+##GR.F TKT control vs TKT altered
+compare = makeContrasts(TktDfGR.F-GR.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.F.CxDf2=DEout
+sGR.F.CxDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.F-GR.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.F.CxOE2=DEout
+sGR.F.CxOE2=DEout[DEout$FDR<.05,]
+
+##WT.F TKT control vs TKT altered
+compare = makeContrasts(TktDfWT.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.F.CxDf2=DEout
+sWT.F.CxDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEWT.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.F.CxOE2=DEout
+sWT.F.CxOE2=DEout[DEout$FDR<.05,]
+
+
+##WT.F vs GR.F
+compare = makeContrasts(GR.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.F2=DEout
+sGRxWT.F2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.F-TktDfWT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.FDf2=DEout
+sGRxWT.FDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.F-TktOEWT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.FOE2=DEout
+sGRxWT.FOE2=DEout[DEout$FDR<.05,]
+
+
+
+##GR.M TKT control vs TKT altered
+compare = makeContrasts(TktDfGR.M-GR.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.M.CxDf2=DEout
+sGR.M.CxDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.M-GR.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.M.CxOE2=DEout
+sGR.M.CxOE2=DEout[DEout$FDR<.05,]
+
+##WT.M TKT control vs TKT altered
+compare = makeContrasts(TktDfWT.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.M.CxDf2=DEout
+sWT.M.CxDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEWT.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.M.CxOE2=DEout
+sWT.M.CxOE2=DEout[DEout$FDR<.05,]
+
+
+##WT.M vs GR.M
+compare = makeContrasts(GR.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.M2=DEout
+sGRxWT.M2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.M-TktDfWT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.MDf2=DEout
+sGRxWT.MDf2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.M-TktOEWT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.MOE2=DEout
+sGRxWT.MOE2=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(GR.F-GR.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.FxM=DEout
+sGR.FxM=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(WT.F-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.FxM=DEout
+sWT.FxM=DEout[DEout$FDR<.05,]
+
+##Removing genes that are too low expressed in Females frome the FxM DEGs
+temp = apply(cpmdata2[, c(1:2,29:30)], 1, mean)
+temp = temp[temp<4]
+GR.FxM[names(temp),"FDR"] = .05
+WT.FxM[names(temp),"FDR"] = .05
+
+MDSdata2 = plotMDS(z, top = 13086, col=as.numeric(factor(gr)))
+
+Comparisons2 = list(row.names(sGR.F.CxDf2), row.names(sGR.F.CxOE2),
+                row.names(sWT.F.CxDf2), row.names(sWT.F.CxOE2),
+                row.names(sGRxWT.F2), row.names(sGRxWT.FDf2), row.names(sGRxWT.FOE2),
+                row.names(sGR.M.CxDf2), row.names(sGR.M.CxOE2),
+                row.names(sWT.M.CxDf2), row.names(sWT.M.CxOE2),
+                row.names(sGRxWT.M2), row.names(sGRxWT.MDf2), row.names(sGRxWT.MOE2))
+
+TKT.EdgeR2 = data.frame(GRF.CxDf = GR.F.CxDf2[row.names(cpmdata2),'FDR'],
+                        GRF.CxOE = GR.F.CxOE2[row.names(cpmdata2),'FDR'],
+                       
+                        WTF.CxDf = WT.F.CxDf2[row.names(cpmdata2),'FDR'],
+                        WTF.CxOE = WT.F.CxOE2[row.names(cpmdata2),'FDR'],
+                       
+                        GRxWT.FC = GRxWT.F2[row.names(cpmdata2),'FDR'],
+                        GRxWT.FDf = GRxWT.FDf2[row.names(cpmdata2),'FDR'],
+                        GRxWT.FOE = GRxWT.FOE2[row.names(cpmdata2),'FDR'],
+                       
+                        GRM.CxDf = GR.M.CxDf2[row.names(cpmdata2),'FDR'],
+                        GRM.CxOE = GR.M.CxOE2[row.names(cpmdata2),'FDR'],
+                       
+                        WTM.CxDf = WT.M.CxDf2[row.names(cpmdata2),'FDR'],
+                        WTM.CxOE = WT.M.CxOE2[row.names(cpmdata2),'FDR'],
+                       
+                        GRxWT.MC = GRxWT.M2[row.names(cpmdata2),'FDR'],
+                        GRxWT.MDf = GRxWT.MDf2[row.names(cpmdata2),'FDR'],
+                        GRxWT.MOE = GRxWT.MOE2[row.names(cpmdata2),'FDR'],
+                        
+                        GR.FxM = GR.FxM[row.names(cpmdata2),'FDR'],
+                        WT.FxM = WT.FxM[row.names(cpmdata2),'FDR'])
+
+row.names(TKT.EdgeR2) = row.names(cpmdata2)
+
+##write.csv(cpmdata2, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT_cpmdata.csv")
+##write.csv(groups2, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT.metadata.csv")
+##write.csv(TKT.EdgeR2, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT.EdgeR.Table.csv")
+
+
+```
+
+## <span style="text-decoration:underline">Does processing the samples after removing the 3 outlier libraries and TEs improve sample normalization?</span> 
+```{r fig9, echo = F, warning=F, fig.height=10, fig.width=10, fig.cap= 'MDS plot using all samples, with the TEs and outlier libraries removed.'}
+
+MDSplot = data.frame(x = MDSdata2$x,
+                     y = MDSdata2$y,
+                     sample = row.names(groups2))
+MDSplot = cbind(MDSplot, groups[MDSplot$sample,])
+MDSplot$GenoSex = paste0(MDSplot$Genotype,MDSplot$Sex)
+MDSplot = MDSplot[order(MDSplot$TKT),]
+MDSplot = MDSplot[order(MDSplot$Sex),]
+MDSplot = MDSplot[order(MDSplot$GenoSex),]
+MDSplot$Group = factor(MDSplot$Group, levels = unique(MDSplot$Group))
+##MDSplot$GenoSex = factor(MDSplot$GenoSex, levels = unique(MDSplot$GenoSex))
+
+  fig  = plot_ly(data = MDSplot, 
+                 x = ~x, 
+                 y = ~y,
+                 name = ~Group,
+                 type = 'scatter',
+                 mode = 'markers',
+                 showlegend = T,
+                 color = ~Group,
+                 symbol = ~Group,
+                 ##legendrank = ~ as.numeric(Group),
+                 symbols = rep(c('circle', 'triangle-down', 'triangle-up'),4),
+                 colors = c("red","firebrick3","deeppink",
+                            "lightskyblue","royalblue","cyan",
+                            "gold", "darkgoldenrod1", "yellow",
+                            "limegreen", "darkgreen", "chartreuse"),
+                 marker = list(size = 25,
+                               line = list(color = "black", width = 1.5)),
+                 hoverinfo = "text",
+                 hovertext = paste("Sample:", MDSplot$Sample)) %>%
+    layout(xaxis = list(title = paste0("Leading logFC dim 1 ", "(", round((MDSdata2$var.explained[1]*100),1), "%)")),
+           yaxis = list(title = paste0("Leading logFC dim 2 ", "(", round((MDSdata2$var.explained[2]*100),1), "%)")))
+  
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r fig10, echo = F, fig.cap='Barplot of Total DEGs found when using all samples with the TEs and outlier libraries removed.'}
+
+Female = c(nrow(sGR.F.CxDf2), nrow(sGR.F.CxOE2),
+           nrow(sWT.F.CxDf2), nrow(sWT.F.CxOE2),
+           nrow(sGRxWT.F2), nrow(sGRxWT.FDf2), nrow(sGRxWT.FOE2))
+
+Male = c(nrow(sGR.M.CxDf2), nrow(sGR.M.CxOE2),
+         nrow(sWT.M.CxDf2), nrow(sWT.M.CxOE2),
+         nrow(sGRxWT.M2), nrow(sGRxWT.MDf2), nrow(sGRxWT.MOE2))
+  
+Comparison = c("GR.C x GR.Df", "GR.C x GR.OE",
+               "WT.C x WT.Df", "WT.C x WT.OE",
+               "GR.C x WT.C", "GR.Df x WT.Df", "GR.OE x WT.OE")
+
+data = data.frame(Female, Male, Comparison)
+
+data$Comparison = factor(data$Comparison, levels = data$Comparison)
+
+fig <- plot_ly(data, 
+               x = ~Comparison, y = ~Female, 
+               type = 'bar',
+               name = "Female",
+               marker = list(color =c("firebrick"),
+                             line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male, name = 'Males',
+                         marker = list(color = c("royalblue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% layout(yaxis = list(title ="Total DEGs"),
+                      xaxis = list(title = NA),
+                      title = "Total DEGs")
+
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r, include = F}
+###EdgeR with TEs and outlier libraries removed, Females only
+
+groups3 = groups[setdiff(row.names(groups), c("GR.F3", "WT.F3","TktDfWT.F3")),]##
+
+groups3 = groups3[groups3$Sex == "F",]
+
+countdata3 = countdata[, row.names(groups3)]
+
+countdata3 = countdata3[-(grep("ti",row.names(countdata3))),]
+countdata3 = countdata3[-(grep("trans",row.names(countdata3))),]
+
+
+x <- countdata3
+gr <- factor(groups3$Group)
+y <- DGEList(counts=x,group=gr)
+keep <- filterByExpr(y)
+y <- y[keep,,keep.lib.sizes=FALSE]
+z <- calcNormFactors(y, method = "TMM")
+##normalized cpm
+cpmdata3=cpm(z)
+
+design<-model.matrix(~0 + gr)
+colnames(design) = unique(gr)
+z = estimateDisp(z, design, robust = T)
+
+fit <- glmQLFit(z, design)
+plotQLDisp(fit)
+
+##Will calculate fold-change with the first over the second
+
+##GR.F TKT control vs TKT altered
+compare = makeContrasts(TktDfGR.F-GR.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.F.CxDf3=DEout
+sGR.F.CxDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.F-GR.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.F.CxOE3=DEout
+sGR.F.CxOE3=DEout[DEout$FDR<.05,]
+
+##WT.F TKT control vs TKT altered
+compare = makeContrasts(TktDfWT.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.F.CxDf3=DEout
+sWT.F.CxDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEWT.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.F.CxOE3=DEout
+sWT.F.CxOE3=DEout[DEout$FDR<.05,]
+
+
+##WT.F vs GR.F
+compare = makeContrasts(GR.F-WT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.F3=DEout
+sGRxWT.F3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.F-TktDfWT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.FDf3=DEout
+sGRxWT.FDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.F-TktOEWT.F, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.FOE3=DEout
+sGRxWT.FOE3=DEout[DEout$FDR<.05,]
+
+
+MDSdata3 = plotMDS(z, top = 10968, col=as.numeric(factor(gr)))
+
+```
+
+## <span style="text-decoration:underline">Does sex specifically processing the samples after removing the 3 outlier libraries and TEs improve sample normalization?</span> 
+```{r fig11, echo = F, warning=F, fig.height=10, fig.width=10, fig.cap= 'MDS plot when the female samples are processed alone. The TEs and outlier libraries are removed.'}
+
+MDSplot = data.frame(x = MDSdata3$x,
+                     y = MDSdata3$y,
+                     sample = row.names(groups3))
+MDSplot = cbind(MDSplot, groups[MDSplot$sample,])
+MDSplot$GenoSex = paste0(MDSplot$Genotype,MDSplot$Sex)
+MDSplot = MDSplot[order(MDSplot$TKT),]
+MDSplot = MDSplot[order(MDSplot$Sex),]
+MDSplot = MDSplot[order(MDSplot$GenoSex),]
+MDSplot$Group = factor(MDSplot$Group, levels = unique(MDSplot$Group))
+##MDSplot$GenoSex = factor(MDSplot$GenoSex, levels = unique(MDSplot$GenoSex))
+
+  fig  = plot_ly(data = MDSplot, 
+                 x = ~x, 
+                 y = ~y,
+                 name = ~Group,
+                 type = 'scatter',
+                 mode = 'markers',
+                 showlegend = T,
+                 color = ~Group,
+                 symbol = ~Group,
+                 ##legendrank = ~ as.numeric(Group),
+                 symbols = rep(c('circle', 'triangle-down', 'triangle-up'),4),
+                 colors = c("red","firebrick3","deeppink",
+                            "gold", "darkgoldenrod1", "yellow"),
+                 marker = list(size = 25,
+                               line = list(color = "black", width = 1.5)),
+                 hoverinfo = "text",
+                 hovertext = paste("Sample:", MDSplot$Sample)) %>%
+    layout(xaxis = list(title = paste0("Leading logFC dim 1 ", "(", round((MDSdata3$var.explained[1]*100),1), "%)")),
+           yaxis = list(title = paste0("Leading logFC dim 2 ", "(", round((MDSdata3$var.explained[2]*100),1), "%)")))
+  
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r, include = F}
+###EdgeR with TEs and outlier libraries removed, Males only
+
+groups4 = groups[groups$Sex == "M",]
+
+countdata4 = countdata[, row.names(groups4)]
+
+countdata4 = countdata4[-(grep("ti",row.names(countdata4))),]
+countdata4 = countdata4[-(grep("trans",row.names(countdata4))),]
+
+
+x <- countdata4
+gr <- factor(groups4$Group)
+y <- DGEList(counts=x,group=gr)
+keep <- filterByExpr(y)
+y <- y[keep,,keep.lib.sizes=FALSE]
+z <- calcNormFactors(y, method = "TMM")
+##normalized cpm
+cpmdata4=cpm(z)
+
+design<-model.matrix(~0 + gr)
+colnames(design) = unique(gr)
+z = estimateDisp(z, design, robust = T)
+
+fit <- glmQLFit(z, design)
+plotQLDisp(fit)
+
+##Will calculate fold-change with the first over the second
+
+##GR.M TKT control vs TKT altered
+compare = makeContrasts(TktDfGR.M-GR.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.M.CxDf3=DEout
+sGR.M.CxDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.M-GR.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GR.M.CxOE3=DEout
+sGR.M.CxOE3=DEout[DEout$FDR<.05,]
+
+##WT.F TKT control vs TKT altered
+compare = makeContrasts(TktDfWT.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.M.CxDf3=DEout
+sWT.M.CxDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEWT.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+WT.M.CxOE3=DEout
+sWT.M.CxOE3=DEout[DEout$FDR<.05,]
+
+
+##WT.F vs GR.F
+compare = makeContrasts(GR.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.M3=DEout
+sGRxWT.M3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.M-TktDfWT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.MDf3=DEout
+sGRxWT.MDf3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktOEGR.M-TktOEWT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRxWT.MOE3=DEout
+sGRxWT.MOE3=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.M-WT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRMDfxWTM=DEout
+sGRMDfxWTM=DEout[DEout$FDR<.05,]
+
+compare = makeContrasts(TktDfGR.M-TktDfWT.M, levels=design)
+lrt = glmQLFTest(fit,contrast=as.vector(compare))
+G_X_E<-topTags(lrt,adjust.method="BH",n = nrow(z$counts), sort.by="PValue")
+DEout=G_X_E$table
+GRMDfxWTMDf=DEout
+sGRMDfxWTMDf=DEout[DEout$FDR<.05,]
+
+
+MDSdata4 = plotMDS(z, top = 12764, col=as.numeric(factor(gr)))
+
+all.cpmgenes = unique(c(row.names(cpmdata3),row.names(cpmdata4)))
+
+all.cpmdata = matrix(NA, ncol = 33, nrow = length(all.cpmgenes))
+colnames(all.cpmdata) = c(colnames(cpmdata3),colnames(cpmdata4))
+row.names(all.cpmdata) = all.cpmgenes
+
+all.cpmdata[row.names(cpmdata3),colnames(cpmdata3)] = cpmdata3
+all.cpmdata[row.names(cpmdata4),colnames(cpmdata4)] = cpmdata4
+
+all.groups = groups[colnames(all.cpmdata),]
+
+all.TKT.EdgeR = all.cpmdata[, 1:14]
+colnames(all.TKT.EdgeR) = c('GRF.CxDf', 'GRF.CxOE', 
+                            'WTF.CxDf', 'WTF.CxOE', 
+                            'GRxWT.FC', 'GRxWT.FDf', 'GRxWT.FOE',
+                            'GRM.CxDf', 'GRM.CxOE', 
+                            'WTM.CxDf', 'WTM.CxOE', 
+                            'GRxWT.MC', 'GRxWT.MDf', 'GRxWT.MOE')
+
+row.names(all.TKT.EdgeR) = row.names(all.cpmdata)
+
+all.TKT.EdgeR[,1] = GR.F.CxDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,2] = GR.F.CxOE3[row.names(all.cpmdata),'FDR']
+                       
+all.TKT.EdgeR[,3] = WTF.CxDf = WT.F.CxDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,4] = WTF.CxOE = WT.F.CxOE3[row.names(all.cpmdata),'FDR']
+                       
+all.TKT.EdgeR[,5] = GRxWT.FC = GRxWT.F3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,6] = GRxWT.FDf = GRxWT.FDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,7] = GRxWT.FOE = GRxWT.FOE3[row.names(all.cpmdata),'FDR']
+                       
+all.TKT.EdgeR[,8] = GRM.CxDf = GR.M.CxDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,9] = GRM.CxOE = GR.M.CxOE3[row.names(all.cpmdata),'FDR']
+                       
+all.TKT.EdgeR[,10] = WTM.CxDf = WT.M.CxDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,11] = WTM.CxOE = WT.M.CxOE3[row.names(all.cpmdata),'FDR']
+                       
+all.TKT.EdgeR[,12] = GRxWT.MC = GRxWT.M3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,13] = GRxWT.MDf = GRxWT.MDf3[row.names(all.cpmdata),'FDR']
+all.TKT.EdgeR[,14] = GRxWT.MOE = GRxWT.MOE3[row.names(all.cpmdata),'FDR']
+
+
+##write.csv(all.cpmdata, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT_cpmdata.csv")
+##write.csv(all.groups, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT.metadata.csv")
+##write.csv(all.TKT.EdgeR, "/Users/johncsantiago/Documents/GitHub/WhartonLab/TKT_RNAseq/CountTables/TKT.EdgeR.Table.csv")
+
+```
+
+
+```{r fig12, echo = F, warning=F, fig.height=10, fig.width=10, fig.cap= 'MDS plot when the male samples are process alone only. The TEs are removed.'}
+
+MDSplot = data.frame(x = MDSdata4$x,
+                     y = MDSdata4$y,
+                     sample = row.names(groups4))
+MDSplot = cbind(MDSplot, groups[MDSplot$sample,])
+MDSplot$GenoSex = paste0(MDSplot$Genotype,MDSplot$Sex)
+MDSplot = MDSplot[order(MDSplot$TKT),]
+MDSplot = MDSplot[order(MDSplot$Sex),]
+MDSplot = MDSplot[order(MDSplot$GenoSex),]
+MDSplot$Group = factor(MDSplot$Group, levels = unique(MDSplot$Group))
+##MDSplot$GenoSex = factor(MDSplot$GenoSex, levels = unique(MDSplot$GenoSex))
+
+  fig  = plot_ly(data = MDSplot, 
+                 x = ~x, 
+                 y = ~y,
+                 name = ~Group,
+                 type = 'scatter',
+                 mode = 'markers',
+                 showlegend = T,
+                 color = ~Group,
+                 symbol = ~Group,
+                 ##legendrank = ~ as.numeric(Group),
+                 symbols = rep(c('circle', 'triangle-down', 'triangle-up'),4),
+                 colors = c("lightskyblue","royalblue","cyan",
+                            "limegreen", "darkgreen", "chartreuse"),
+                 marker = list(size = 25,
+                               line = list(color = "black", width = 1.5)),
+                 hoverinfo = "text",
+                 hovertext = paste("Sample:", MDSplot$Sample)) %>%
+    layout(xaxis = list(title = paste0("Leading logFC dim 1 ", "(", round((MDSdata4$var.explained[1]*100),1), "%)")),
+           yaxis = list(title = paste0("Leading logFC dim 2 ", "(", round((MDSdata4$var.explained[2]*100),1), "%)")))
+  
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+```{r fig13, echo = F, fig.cap='Barplot of Total DEGs when male and female samples are processed separately. The TEs and outlier libraries were removed.'}
+
+Female = c(nrow(sGR.F.CxDf3), nrow(sGR.F.CxOE3),
+           nrow(sWT.F.CxDf3), nrow(sWT.F.CxOE3),
+           nrow(sGRxWT.F3), nrow(sGRxWT.FDf3), nrow(sGRxWT.FOE3))
+
+Male = c(nrow(sGR.M.CxDf3), nrow(sGR.M.CxOE3),
+         nrow(sWT.M.CxDf3), nrow(sWT.M.CxOE3),
+         nrow(sGRxWT.M3), nrow(sGRxWT.MDf3), nrow(sGRxWT.MOE3))
+  
+Comparison = c("GR.C x GR.Df", "GR.C x GR.OE",
+               "WT.C x WT.Df", "WT.C x WT.OE",
+               "GR.C x WT.C", "GR.Df x WT.Df", "GR.OE x WT.OE")
+
+data = data.frame(Female, Male, Comparison)
+
+data$Comparison = factor(data$Comparison, levels = data$Comparison)
+
+fig <- plot_ly(data, 
+               x = ~Comparison, y = ~Female, 
+               type = 'bar',
+               name = "Female",
+               marker = list(color =c("firebrick"),
+                             line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male, name = 'Males',
+                         marker = list(color = c("royalblue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% layout(yaxis = list(title ="Total DEGs"),
+                      xaxis = list(title = NA),
+                      title = "Total DEGs")
+
+fig
+
+```
+
+<br /><br /><br /><br /><br /><br />
+\newpage
+
+## <span style="text-decoration:underline">How do the different processing methods alter the number of total DEGs?</span> 
+```{r fig14, echo = F, fig.cap='Barplot of Total DEGs for each comparison under the different trimming conditions. Different trimming conditions were: (1) all samples processed together with no TEs or outlier libraries removed; (2) trimmed data with TEs and outlier libraries removed, male and female samples processed together; (3) trimmed data with TEs and outlier libraries removed, male and female samples processed separately.'}
+
+Female.trim = c(nrow(sGR.F.CxDf2), nrow(sGR.F.CxOE2),
+           nrow(sWT.F.CxDf2), nrow(sWT.F.CxOE2),
+           nrow(sGRxWT.F2), nrow(sGRxWT.FDf2), nrow(sGRxWT.FOE2))
+
+Male.trim = c(nrow(sGR.M.CxDf2), nrow(sGR.M.CxOE2),
+         nrow(sWT.M.CxDf2), nrow(sWT.M.CxOE2),
+         nrow(sGRxWT.M2), nrow(sGRxWT.MDf2), nrow(sGRxWT.MOE2))
+
+Female.Only.trim = c(nrow(sGR.F.CxDf3), nrow(sGR.F.CxOE3),
+           nrow(sWT.F.CxDf3), nrow(sWT.F.CxOE3),
+           nrow(sGRxWT.F3), nrow(sGRxWT.FDf3), nrow(sGRxWT.FOE3))
+
+Male.Only.trim = c(nrow(sGR.M.CxDf3), nrow(sGR.M.CxOE3),
+         nrow(sWT.M.CxDf3), nrow(sWT.M.CxOE3),
+         nrow(sGRxWT.M3), nrow(sGRxWT.MDf3), nrow(sGRxWT.MOE3))
+
+Female = c(nrow(sGR.F.CxDf), nrow(sGR.F.CxOE),
+           nrow(sWT.F.CxDf), nrow(sWT.F.CxOE),
+           nrow(sGRxWT.F), nrow(sGRxWT.FDf), nrow(sGRxWT.FOE))
+
+Male = c(nrow(sGR.M.CxDf), nrow(sGR.M.CxOE),
+         nrow(sWT.M.CxDf), nrow(sWT.M.CxOE),
+         nrow(sGRxWT.M), nrow(sGRxWT.MDf), nrow(sGRxWT.MOE))
+
+Comparison = c("GR.C x GR.Df", "GR.C x GR.OE",
+               "WT.C x WT.Df", "WT.C x WT.OE",
+               "GR.C x WT.C", "GR.Df x WT.Df", "GR.OE x WT.OE")
+
+data = data.frame(Female, Female.trim, Male, Male.trim, Comparison)
+
+data$Comparison = factor(data$Comparison, levels = data$Comparison)
+
+fig <- plot_ly(data, 
+               x = ~Comparison, y = ~Female, 
+               type = 'bar',
+               name = "Female",
+               marker = list(color =c("firebrick"),
+                             line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Female.trim, name = 'Trim Female',
+                         marker = list(color = c("red"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Female.Only.trim, name = 'Trim Only Female',
+                         marker = list(color = c("pink"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male, name = 'Males',
+                         marker = list(color = c("blue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male.trim, name = 'Trim Males',
+                         marker = list(color = c("cornflowerblue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% add_trace(y = ~Male.Only.trim, name = 'Trim Only Males',
+                         marker = list(color = c("skyblue"),
+                                       line = list(color = "black", width = 1.5)))
+
+fig <- fig %>% layout(yaxis = list(title ="Total DEGs"),
+                      xaxis = list(title = NA),
+                      title = "Total DEGs")
+
+fig
+
+```
+
+
+```{r fig15, echo = F, fig.cap='Venn Diagram of total DEGs between male and female samples in a G85R and WT background.'}
+
+GR.Up   = row.names(GR.FxM)[GR.FxM$logFC > 0 & GR.FxM$FDR <= .05]
+GR.Down = row.names(GR.FxM)[GR.FxM$logFC < 0 & GR.FxM$FDR <= .05]
+WT.Up   = row.names(WT.FxM)[WT.FxM$logFC > 0 & WT.FxM$FDR <= .05]
+WT.Down = row.names(WT.FxM)[WT.FxM$logFC < 0 & WT.FxM$FDR <= .05]
+
+##Sample titles as strings. Only fill in up to your number of selected categories
+set1="G85R - F > M"
+set2="G85R - M > F"
+set3="WT - F > M"
+set4="WT - F < M"
+  
+##items to be compared (ex: gene names) as a 1 dimensional vectors. Only give inputs up to your number of selected categories
+s1=GR.Up
+s2=GR.Down
+s3=WT.Up
+s4=WT.Down
+
+#Quad Venn
+grid.newpage()
+tempvenn=draw.quad.venn(area1=length(s1),area2=length(s2),area3=length(s3),area4=length(s4), n12=length(intersect(s1,s2)),n13 = length(intersect(s1,s3)),n14 = length(intersect(s1,s4)),n23 = length(intersect(s2,s3)),n24 = length(intersect(s2,s4)),n34 = length(intersect(s3,s4)),n123 =  length(intersect(s1,intersect(s2,s3))),n124 =  length(intersect(s1,intersect(s2,s4))), n134 = length(intersect(s1,intersect(s3,s4))),n234 = length(intersect(s2,intersect(s3,s4))),n1234 = length(intersect(s1,intersect(s2,intersect(s3,s4)))),category =c(set1,set2,set3,set4),fill = c("blue", "red","green","yellow"),cex=2,cat.cex = 1)
+
+```
+
+
+
