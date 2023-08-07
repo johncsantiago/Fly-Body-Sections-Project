@@ -12,10 +12,12 @@ library(colourpicker)
 ##load all files from github
 
 git.dir = "https://raw.githubusercontent.com/johncsantiago/Fly-Body-Sections-Project/master/Data/"
-cpmdata = read.csv(paste0(git.dir,"cpmdata.csv"),row.names = 1)
+##cpmdata = read.csv(paste0(git.dir,"cpmdata.csv"),row.names = 1)
+cpmdata = read.csv(paste0(git.dir,"yevgeniy_cpmdata.csv"),row.names = 1)
 groups  = read.csv(paste0(git.dir,"groups.csv"),row.names = 1)
 ##TKT.EdgeR = read.csv(paste0(git.dir,"TKT.EdgeR.Table.csv"),row.names = 1)
-convert=read.csv("https://raw.githubusercontent.com/DavidRandLab/Santiago-et-al-2021-BMC-Genomics/main/Data%20Files/FBgnConversionTable.csv",row.names=1)
+
+convert = read.csv("https://raw.githubusercontent.com/johncsantiago/WhartonLab/master/GeneralDataFiles/GeneIDKey.csv",row.names = 1)
 
 ##Add additional groups for color factors
 groups$GxS = paste0(groups$Species, groups$Sex)
@@ -23,7 +25,7 @@ groups$GxT = paste0(groups$Species, groups$Treatment)
 groups$GxSxT = paste0(groups$GxS, groups$Treatment)
 
 ##FBgn2Symbol; Variable for converting FBgn to symbol
-temp                   = convert[,c("updated.FBgn","Symbol")]
+temp                   = convert[,c("FBgn","Symbol")]
 temp2                  = setdiff(row.names(cpmdata),row.names(convert))
 temp2                  = matrix(rep(temp2,2), ncol=2)
 row.names(temp2)       = temp2[,1]
@@ -118,10 +120,10 @@ ui <- fluidPage(
                                         "Color 2"          = 2,
                                         "Color 3"          = 3,
                                         "Color 4"          = 4,
-                                        "Color 3"          = 5,
-                                        "Color 4"          = 6,
-                                        "Color 3"          = 7,
-                                        "Color 4"          = 8),
+                                        "Color 5"          = 5,
+                                        "Color 6"          = 6,
+                                        "Color 7"          = 7,
+                                        "Color 8"          = 8),
                          selected = 0),
       ),),
     
